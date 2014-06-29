@@ -1,23 +1,30 @@
 --[[ trade/init.lua ]]--
 
+base  = minetest.get_modpath("trade") .. "/"
 trade = {}
 trade.max_distance = 5.0
 
+-- include all parts of system here
+dofile(base .. "handle_commands.lua")
+
+
 --[[
-состояние системы обмена для каждого игрока
-nick -> TradeState
-  owner -- владелец записи (==nick)
+trade.states -- состояние системы обмена для каждого игрока
+nickname -> TradeState
+  owner -- владелец записи (==nickname)
   enabled (true/false) -- разрешен ли приём предложений обмена по умолчанию?
   blocklist = { -- список "неугодных"
-    nickname, -- ник заблокированного
-    tstamp,   -- дата и время блокировки
-    reason,   -- заметка по поводу причины блокировки
+    { nickname, -- ник заблокированного
+      tstamp,   -- дата и время блокировки
+      reason,   -- заметка по поводу причины блокировки
+    }
   }
 --]]
 trade.states = {}
 
 --[[
-  history = { -- история обменов
+  trade.history -- история обменов
+  {
     {
       tstamp,    -- когда завершена сделка
       proposer,  -- игрок, предложивший обмен
@@ -39,18 +46,13 @@ trade.history = {}
 формат записи:
 {
     starttime,
-    proposer,
-    acceptor,
-    proposer_choice,
-    acceptor_choice,
+    player1,
+    player2,
+    choice1,
+    choice2,
 }
 --]]
-trade.next_desk_id = 1
-trade.desks = {}
-
-function trade.find_trade_desk
-
-
+trade.active_trades = {}
 
 function trade.distance(a, b)
   return math.sqrt((a.x - b.x)^2 + (a.y - b.y)^2 + (a.z - b.z)^2)
@@ -63,7 +65,8 @@ return:
 function trade.can_start_trade(name1, name2)
   -- проверяем, не пытается ли игрок тоговать сам с собой
   if name1 == name2 then
-    print("can not start trade: player[1] '"..name1.."' can not trade with himself")
+    print("can not start trade: player[1] '"..name1..
+          "' can not trade with himself")
     return false
   end
 
@@ -97,21 +100,43 @@ function trade.can_start_trade(name1, name2)
     return false
   end
   -- проверяем, близко ли они друг от друга
-  -- FIXME: добавить проверку прямой видимости, иначе можно торговать сквозь стены
+  -- FIXME: добавить проверку прямой видимости, 
+  -- иначе можно торговать сквозь стены
   local d = trade.distance(p1:getpos(), p2:getpos())
-  if trade,max_distance < d then
-    print("can not start trade: players '"..name1.."' and '"..name2.."' are too far apart")
+  if trade.max_distance < d then
+    print("can not start trade: players '"..name1..
+          "' and '"..name2.."' are too far apart")
     return false
   end
 
   -- проверяем, не участвует ли уже какой игрок в торговле?
-  for desk_id,desk in pairs(trade.desks) do
-    if desk[0].player == name1 or desk[1].player == name1 then
-      print("can not start trade: player[1] '"..name1.."' is in trade session "..desk_id)
+  for _,sess in pairs(trade.desks) do
+    if sess.player1 == name1 then
+      if sess.player2 == name2 then
+        break
+      else
+        print("can not start trade: player[1] '"..name1..
+              "' trades with "..sess.player2)
+        return false;
+      end
+    end
+    if sess.player2 == name1 then
+      if sess.player1 == name2 then
+        break
+      else
+        print("can not start trade: player[1] '"..name1..
+              "' trades with "..sess.player1)
+        return false;
+      end
+    end
+    if sess.player1 == name2 then
+      print("can not start trade: player[2] '"..name2..
+            "' trades with "..sess.player2)
       return false;
     end
-    if desk[0].player == name2 or desk[1].player == name2 then
-      print("can not start trade: player[2] '"..name2.."' is in trade session "..desk_id)
+    if sess.player2 == name2 then
+      print("can not start trade: player[2] '"..name2..
+            "' trades with "..sess.player1)
       return false;
     end
   end
@@ -120,55 +145,6 @@ function trade.can_start_trade(name1, name2)
   print("players '"..name1.."' and '"..name2.."' can start trading")
   return true
 end -- trade.can_start_trade(name1, name2)
-
---[[
-
-function trade.create_desk_part(desk_id, player_name)
-  local dp = minetest.create_detached_inventory("desk"..desk_id..":"..player_name, {
-    -- только владелец части торгового стола может двигать вещи 
-    allow_move = function (inv, from_list, from_index, to_list, to_index, count, player)
-      if player:get_player_name() /= inv.owner then
-        return 0
-      end
-      return count
-    end,
-
-    -- только владелец части торгового стола может выставлять вещи
-    allow_put = function (inv, listname, index, stack, player)
-      if player:get_player_name() /= inv.owner then
-        return -1
-      end
-      return 0
-    end,
-
-    -- только владелец части торгового стола может изымать вещи
-    allow_take = function (inv, listname, index, stack, player)
-      if player:get_player_name() /= inv.owner then
-        return -1
-      end
-      return 0
-    end,
-
-    -- при движении вещей на любой из частей торгового стола 
-    -- у обеих частей торгового стола сбрасываются флаги согласия
-    on_move = func(inv, from_list, from_index, to_list, to_index, count, player)
-    end,
-
-    -- при помещении вещи на любую из частей торгового стола 
-    -- у обеих частей торгового стола сбрасываются флаги согласия
-    on_put = func(inv, listname, index, stack, player)
-    end,
-
-    -- при изымании вещи с любой из частей торгового стола 
-    -- у обеих частей торгового стола сбрасываются флаги согласия
-    on_take = func(inv, listname, index, stack, player)
-    end,
-
-    })
-  return dp
-end -- trade.create_desk_part(desk_id, player_name)
-
---]]
 
 -- начало торговли: создание торгового стола, открытие торговых форм у игроков
 function trade.start_trade(name1, name2)
@@ -185,28 +161,4 @@ function trade.start_trade(name1, name2)
       inv ={},  },
     { player = name2, inv = {}, choice = 'undefined' }
   }
-
-}
-
-
-
-minetest.register_chatcommand("tradeform", {
-    params = "<playername>",
-    description = "show form for trade with other player or NPC",
-    privs = {},
-    func = function (name, param)
-        local name1 = 
-        minetest.create_detached_inventory()
-    end,
-})
-
-
-function testchest.get_formspec(pos, playername)
-    local meta = minetest.get_meta(pos)
-    local spos = pos.x .. "," .. pos.y .. "," ..pos.z
-    local formspec = "size[8,9]"..
-		"list[nodemeta:".. spos .. ";panel_1;0,0;4,4;]"..
-		"list[nodemeta:".. spos .. ";panel_2;0,0;4,4;]"..
-		"list[current_player;main;0,5;8,4;]"
-	return formspec
 end
