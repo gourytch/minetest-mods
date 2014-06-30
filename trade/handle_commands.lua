@@ -66,7 +66,8 @@ end -- trade.handle_status()
 
 
 function trade.handle_showdesk(name)
-  return false,"NIY"
+  trade.show_desk(name)
+  return true
 end -- trade.handle_showdesk()
 
 
@@ -110,7 +111,7 @@ function trade.handle_chatcommand(name, param)
   end
   -- /trade | /trade help [command]
   if cmd == "help" or cmd == "" then
-    return false,trade.handle_help(name, args)
+    return trade.handle_help(name, args)
   end
   if cmd == "desk" or cmd == "showdesk" then
     return trade.handle_showdesk(name, args)
