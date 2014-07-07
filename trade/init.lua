@@ -8,6 +8,7 @@ trade.desk_height = 3
 trade.desk_size = trade.desk_width * trade.desk_height
 
 -- include all parts of system here
+dofile(base .. "common.lua")
 dofile(base .. "form_desk.lua")
 dofile(base .. "form_request.lua")
 dofile(base .. "form_trade.lua")

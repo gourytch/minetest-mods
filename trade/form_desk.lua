@@ -1,4 +1,4 @@
---[[ форма для trade-списка ]]
+--[[ форма для trade-списка ]]--
 
 function trade.show_desk(name)
   local inv = minetest.get_inventory({type="player", name=name})
