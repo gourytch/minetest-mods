@@ -15,3 +15,9 @@ b:removeBlock('lolek', 'babaka');
 b:dump();
 b:removeGlobalBlock('babaka');
 b:dump();
+s = b:toString();
+print("s="..s);
+
+c = BlockList.create(s);
+c:dump();
+print("s="..c:toString());
