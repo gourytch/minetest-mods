@@ -9,6 +9,8 @@ local timer_value = 0;
 local timer_interval = 1.0;
 local max_distance = 5;
 
+local trade_blocklist = BlockList.create();
+
 function Trade.find(name)
     for _,v = pairs(active_trades) do
         if v.initiator == name or v.acceptor == name then
@@ -85,12 +87,12 @@ function Trade.create(initiator, acceptor)
     active_trades[obj.id] = obj;
     obj.initiator = initiator;
     obj.acceptor  = acceptor;
-    obj.stage     = '?'; -- request | propose | confirm | finish | cancel
     obj.lock1     = false; -- lock from initiator
     obj.lock2     = false; -- lock from acceptor
     obj.cbs_timer = {};
     obj.cbs_close = {};
     obj.resetTime();
+    obj.stage     = '?';
     return obj;
 end;
 
@@ -99,7 +101,21 @@ function Trade:destroy()
     for _,cb = pairs(self.cbs_close) do
         cb(self);
     end;
-    active_trades[obj.id] = nil;
+    active_trades[self.id] = nil;
+    self.id = nil;
+end;
+
+-- перепроверить на возможность продолжения торговли
+-- прервать торговлю при отсутствии возможности
+function Trade:recheck()
+    local enabled, reason = Trade.canTrade(initiator, acceptor);
+    if not enabled then
+        self.reason = reason;
+        if self.stage ~= "finish" and self.stage ~= "cancel" then
+            self:setStageCancel();
+        end;
+    end;
+    return enabled;
 end;
 
 
@@ -137,6 +153,7 @@ end;
 
 --[[ рёбра графа переходов между состояниями
  ?       -> request
+ ?       -> cancel
  request -> cancel
  request -> propose
  propose -> cancel
@@ -150,8 +167,8 @@ end;
 -- 1. создать окно запроса обмена от initiator-а к acceptor-у
 --
 function Trade:setStageRequest()
-    assert(self.stage == '?', "bad stage:"..self.stage);
-    
+    assert(self.stage == '?');
+    self:resetTimer();
     self.stage = 'request';
 end;
 
@@ -160,7 +177,9 @@ end;
 -- 1. создать окно разблокированного обмена у acceptor-а
 --
 function Trade:setStagePropose()
+    assert(self.stage == 'request' or self.stage == 'confirm');
     self.stage = 'propose';
+    self:resetTimer();
 end;
 
 --
@@ -168,7 +187,9 @@ end;
 -- 1. создать окно подтверждения обмена у acceptor-а
 --
 function Trade:setStageConfirm()
+    assert(self.stage == 'propose');
     self.stage = 'confirm';
+    self:resetTimer();
 end;
 
 --
@@ -178,6 +199,7 @@ end;
 -- 3. создать окно лотка у acceptor-а
 --
 function Trade:setStageFinish()
+    assert(self.stage == 'confirm');
     self.memorize();
     self.swap();
     self.stage = 'finish';
@@ -187,24 +209,25 @@ end;
 
 
 function Trade:setStageCancel()
+    assert(self.stage ~= "finish" and self.stage ~= "cancel");
     self.stage = 'cancel';
-    trade.show_desk(self.initiator);
-    trade.show_desk(self.acceptor);
+    trade.hide_forms(self.initiator);
+    trade.hide_forms(self.acceptor);
 end;
 
 
 function Trade:memorize()
     local p0 = minetest.get_player_by_name(self.initiator);
     local p1 = minetest.get_player_by_name(self.acceptor);
-    local v0 = p0:get_inventory_list('trade');
-    local v1 = p1:get_inventory_list('trade');
+    local v0 = p0:get_inventory():get_list('trade');
+    local v1 = p1:get_inventory():get_list('trade');
     --
 end;
 
 function Trade:swap()
     local p0 = minetest.get_player_by_name(self.initiator);
     local p1 = minetest.get_player_by_name(self.acceptor);
-    local v0 = p0:get_inventory_list('trade');
-    local v1 = p1:get_inventory_list('trade');
+    local v0 = p0:get_inventory():get_list('trade');
+    local v1 = p1:get_inventory():get_list('trade');
     --
 end;
