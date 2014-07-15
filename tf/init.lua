@@ -70,8 +70,26 @@ local function handleCommand(name, args)
     return true;
 end;
 
+local function handleTFTPCommand(name, args)
+    _username = name;
+    local player = minetest.get_player_by_name(name);
+    local pos = player:getpos();
+    pos.y = pos.y + 100;
+    player:setpos(pos);
+    show();
+    return true;
+end;
+
+
+
 minetest.register_chatcommand("tf", {
   params = "",
   description = "show form and hide it by timeout",
   func = handleCommand});
 print("chatcommand /tf registered");
+
+minetest.register_chatcommand("tftp", {
+  params = "",
+  description = "teleport into sky and launch fimeout form (killtest)",
+  func = handleTFTPCommand});
+print("chatcommand /tftp registered");
